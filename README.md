@@ -13,15 +13,16 @@ A Saudi-focused personal health companion built as a course project. Manage medi
 - Request AI interaction assessments through Gemini.
 - Track taken, skipped, and missed doses, with in-app reminders and adherence summaries.
 - Request doctor appointments, create Zoom meetings after approval, and join during the appointment window.
+- Send appointment request and approval notifications through Gmail SMTP.
 
 ## Tech Stack
 
-Java 17+, Spring Boot, Spring Data JPA, Validation, Lombok, MySQL, and HTML/CSS/JavaScript. External integrations use `RestClient`.
+Java 17+, Spring Boot, Spring Data JPA, Validation, Lombok, Spring Mail, MySQL, and HTML/CSS/JavaScript. SFDA, Gemini, and Zoom integrations use `RestClient`; email uses SMTP.
 
 ## Run Locally
 
 1. Create a MySQL database named `jura` and configure the connection in `src/main/resources/application.properties`.
-2. Set `GEMINI_API_KEY` for interaction checks. For Zoom, set `ZOOM_ACCOUNT_ID`, `ZOOM_CLIENT_ID`, `ZOOM_CLIENT_SECRET`, and `ZOOM_HOST_USER_ID`. Keep credentials outside version control.
+2. Set `GEMINI_API_KEY` for interaction checks. For Zoom, set `ZOOM_ACCOUNT_ID`, `ZOOM_CLIENT_ID`, `ZOOM_CLIENT_SECRET`, and `ZOOM_HOST_USER_ID`. For Gmail SMTP, set `GMAIL_SENDER_EMAIL` and `GMAIL_APP_PASSWORD` (a Google App Password with 2-Step Verification enabled). Set `JURA_FRONTEND_URL` when the frontend address differs from localhost. Keep credentials outside version control.
 3. Start the application:
 
    ```bash

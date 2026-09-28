@@ -4,15 +4,19 @@ import com.example.jura.Api.GeminiInteractionResponse;
 import jakarta.validation.Validator;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ThreadLocalRandom;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.databind.json.JsonMapper;
 
 @Service
+@Slf4j
 public class GeminiService {
 
     private final RestClient restClient;
@@ -71,12 +75,7 @@ public class GeminiService {
                 "generationConfig", Map.of("temperature", 0.1, "maxOutputTokens", 16384,
                         "responseFormat", Map.of("text", Map.of("mimeType", "APPLICATION_JSON", "schema", responseSchema())))
         );
-        Map<?, ?> response = restClient.post()
-                .uri("https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent", model)
-                .header("x-goog-api-key", apiKey)
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(request)
-                .retrieve().body(Map.class);
+        Map<?, ?> response = sendWithRetries(request);
 
         // Blocked, truncated, malformed, or invalid model output is not a safety finding.
         if (response == null || !(response.get("candidates") instanceof List<?> candidates)
@@ -101,6 +100,32 @@ public class GeminiService {
             return parsed.getResults();
         } catch (RuntimeException exception) {
             return List.of(); // Invalid JSON must remain UNKNOWN
+        }
+    }
+
+    private Map<?, ?> sendWithRetries(Map<String, Object> request) {
+        for (int attempt = 1; ; attempt++) {
+            try {
+                return restClient.post()
+                        .uri("https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent", model)
+                        .header("x-goog-api-key", apiKey)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(request)
+                        .retrieve().body(Map.class);
+            } catch (RestClientResponseException exception) {
+                if (exception.getStatusCode().value() != 503 || attempt >= 3) {
+                    throw exception; // Only retry overload errors, with three total attempts
+                }
+                long delayMillis = (attempt == 1 ? 2000L : 4000L)
+                        + ThreadLocalRandom.current().nextLong(501);
+                log.warn("Gemini is busy (HTTP 503); retry {} of 2 in {} ms", attempt, delayMillis);
+                try {
+                    Thread.sleep(delayMillis);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new RestClientException("Gemini retry interrupted", interrupted);
+                }
+            }
         }
     }
 

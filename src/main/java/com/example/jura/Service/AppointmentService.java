@@ -27,6 +27,7 @@ public class AppointmentService {
     private final DoctorProfileRepository doctorProfileRepository;
     private final MeetingRepository meetingRepository;
     private final ZoomService zoomService;
+    private final AppointmentEmailService appointmentEmailService;
 
     public List<Appointment> getPatientAppointments(Integer patientId) {
         User patient = userRepository.findUserById(patientId);
@@ -49,6 +50,7 @@ public class AppointmentService {
         return appointmentRepository.findById(id).orElse(null);
     }
 
+    @Transactional
     public int addAppointment(Appointment appointment) {
         User patient = userRepository.findUserById(appointment.getPatientId());
         if (patient == null) {
@@ -71,6 +73,7 @@ public class AppointmentService {
         appointment.setId(null);
         appointment.setStatus("PENDING");
         appointmentRepository.save(appointment);
+        appointmentEmailService.notifyRequested(appointment);
         return 0; // Appointment requested successfully
     }
 
@@ -142,6 +145,7 @@ public class AppointmentService {
 
         appointment.setStatus("APPROVED");
         appointmentRepository.save(appointment);
+        appointmentEmailService.notifyApproved(appointment);
         return 0; // Appointment approved successfully
     }
 
