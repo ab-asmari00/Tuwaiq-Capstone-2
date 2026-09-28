@@ -5,6 +5,7 @@ import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.mail.MailAuthenticationException;
 import org.springframework.mail.MailException;
 import org.springframework.mail.javamail.JavaMailSender;
@@ -29,6 +30,10 @@ public class GmailService {
     }
 
     public boolean sendEmail(String recipient, String subject, String message) {
+        return sendEmail(recipient, subject, message, null);
+    }
+
+    public boolean sendEmail(String recipient, String subject, String message, String htmlMessage) {
         if (!isConfigured()) {
             log.warn("Gmail SMTP is not configured; set GMAIL_SENDER_EMAIL and GMAIL_APP_PASSWORD");
             return false;
@@ -41,11 +46,16 @@ public class GmailService {
 
         try {
             MimeMessage email = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(email, false, "UTF-8");
+            MimeMessageHelper helper = new MimeMessageHelper(email, htmlMessage != null, "UTF-8");
             helper.setFrom(senderEmail);
             helper.setTo(recipient);
             helper.setSubject(subject);
-            helper.setText(message, false);
+            if (htmlMessage == null) {
+                helper.setText(message, false);
+            } else {
+                helper.setText(message, htmlMessage);
+                helper.addInline("jura-logo", new ClassPathResource("static/logo.png"), "image/png");
+            }
             mailSender.send(email);
             return true;
         } catch (MailAuthenticationException exception) {

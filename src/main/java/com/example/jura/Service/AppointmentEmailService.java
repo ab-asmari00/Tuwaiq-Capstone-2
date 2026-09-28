@@ -4,6 +4,10 @@ import com.example.jura.Model.Appointment;
 import com.example.jura.Model.User;
 import com.example.jura.Repository.UserRepository;
 import java.time.format.DateTimeFormatter;
+import java.nio.charset.StandardCharsets;
+import java.io.IOException;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.web.util.HtmlUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -39,9 +43,11 @@ public class AppointmentEmailService {
         String doctorMessage = "مرحباً دكتور " + doctor.getName() + "،\n\n"
                 + "لديك طلب موعد جديد من " + patient.getName() + ".\n"
                 + details + "\n\nسجّل الدخول إلى جرعة لمراجعة الطلب:\n" + frontendUrl;
+        String patientHtml = buildHtml(appointment, patient.getName(), doctor.getName(), false, false);
+        String doctorHtml = buildHtml(appointment, doctor.getName(), patient.getName(), true, false);
         afterCommit(() -> {
-            sendSafely(patientEmail, "جرعة — تم إرسال طلب موعدك", patientMessage);
-            sendSafely(doctorEmail, "جرعة — طلب موعد جديد", doctorMessage);
+            sendSafely(patientEmail, "جرعة — تم إرسال طلب موعدك", patientMessage, patientHtml);
+            sendSafely(doctorEmail, "جرعة — طلب موعد جديد", doctorMessage, doctorHtml);
         });
     }
 
@@ -58,7 +64,53 @@ public class AppointmentEmailService {
                 + details(appointment) + "\n\n"
                 + "افتح جرعة، ثم الاستشارات. يتاح زر الانضمام خلال وقت الموعد فقط.\n"
                 + frontendUrl;
-        afterCommit(() -> sendSafely(recipient, "جرعة — تمت الموافقة على موعدك", message));
+        String html = buildHtml(appointment, patient.getName(), doctor.getName(), false, true);
+        afterCommit(() -> sendSafely(recipient, "جرعة — تمت الموافقة على موعدك", message, html));
+    }
+
+    private String buildHtml(Appointment appointment, String recipientName, String otherName,
+                             boolean doctor, boolean approved) {
+        String template;
+        try (var input = new ClassPathResource("templates/email/appointment.html").getInputStream()) {
+            template = new String(input.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (IOException exception) {
+            log.warn("Appointment HTML template unavailable; using plain text");
+            return null;
+        }
+        String title = approved ? "موعدك مؤكد" : doctor ? "لديك طلب موعد جديد" : "وصلنا طلب موعدك";
+        String intro = approved ? "وافق الطبيب على طلبك، وتم تجهيز الاجتماع للاستشارة."
+                : doctor ? "أرسل أحد المرضى طلب استشارة. راجع التفاصيل ثم وافق على الطلب أو ارفضه من المنصة."
+                : "تم إرسال طلبك إلى الطبيب بنجاح. سنرسل لك إشعاراً بالبريد عند الموافقة على الموعد.";
+        java.util.Map<String, String> values = new java.util.HashMap<>();
+        values.put("PREHEADER", title);
+        values.put("STATUS_BG", approved ? "#e4f5eb" : "#fff3db");
+        values.put("STATUS_COLOR", approved ? "#17603e" : "#815719");
+        values.put("STATUS", approved ? "تمت الموافقة" : "بانتظار الموافقة");
+        values.put("TITLE", title);
+        values.put("GREETING", "مرحباً " + (doctor ? "دكتور " : "") + recipientName + "،");
+        values.put("INTRO", intro);
+        values.put("ID", String.valueOf(appointment.getId()));
+        values.put("PERSON_LABEL", doctor ? "المريض" : "الطبيب");
+        values.put("PERSON", otherName);
+        values.put("DATE", appointment.getStartAt().format(DateTimeFormatter.ofPattern("dd / MM / yyyy")));
+        values.put("TIME", appointment.getStartAt().format(DateTimeFormatter.ofPattern("HH:mm"))
+                + " – " + appointment.getEndAt().format(DateTimeFormatter.ofPattern("HH:mm"))
+                + (appointment.getEndAt().toLocalDate().equals(appointment.getStartAt().toLocalDate()) ? ""
+                : " (" + appointment.getEndAt().format(DateTimeFormatter.ofPattern("dd / MM / yyyy")) + ")"));
+        values.put("NOTE", approved ? "سجّل الدخول ثم افتح الاستشارات. يظهر زر الانضمام خلال وقت الموعد فقط."
+                : doctor ? "هذا طلب جديد ولم يتم تأكيد الموعد بعد. يمكنك مراجعته من صفحة المواعيد."
+                : "الموعد غير مؤكد حتى موافقة الطبيب. يمكنك متابعة حالة الطلب من صفحة الاستشارات.");
+        values.put("BUTTON", doctor ? "مراجعة طلب الموعد" : "فتح الاستشارات في جرعة");
+        values.put("URL", frontendUrl);
+        // Replace original placeholders once so user-supplied text cannot become another placeholder.
+        var matcher = java.util.regex.Pattern.compile("\\{\\{([A-Z_]+)\\}\\}").matcher(template);
+        StringBuilder html = new StringBuilder();
+        while (matcher.find()) {
+            matcher.appendReplacement(html, java.util.regex.Matcher.quoteReplacement(
+                    HtmlUtils.htmlEscape(values.getOrDefault(matcher.group(1), ""))));
+        }
+        matcher.appendTail(html);
+        return html.toString();
     }
 
     private String details(Appointment appointment) {
@@ -83,9 +135,9 @@ public class AppointmentEmailService {
         }
     }
 
-    private void sendSafely(String recipient, String subject, String message) {
+    private void sendSafely(String recipient, String subject, String message, String html) {
         try {
-            if (!gmailService.sendEmail(recipient, subject, message)) {
+            if (!gmailService.sendEmail(recipient, subject, message, html)) {
                 log.warn("Appointment email was not sent; appointment remains saved");
             }
         } catch (RuntimeException exception) {
