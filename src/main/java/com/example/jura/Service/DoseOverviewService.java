@@ -1,5 +1,6 @@
 package com.example.jura.Service;
 
+import com.example.jura.Api.ApiException;
 import com.example.jura.Api.TodayDose;
 import com.example.jura.Model.*;
 import com.example.jura.Repository.*;
@@ -24,8 +25,8 @@ public class DoseOverviewService {
     }
 
     private List<TodayDose> getDoses(Integer userId, LocalDate firstDate, LocalDate lastDate) {
-        User patient = users.findUserById(userId);
-        if (patient == null || !"PATIENT".equals(patient.getRole())) return null;
+        User patient = users.findById(userId).orElseThrow(() -> new ApiException("Patient not found"));
+        if (!"PATIENT".equals(patient.getRole())) throw new ApiException("Patient not found");
         LocalDateTime now = LocalDateTime.now(clock);
         List<TodayDose> result = new ArrayList<>();
         for (UserItem item : items.findByUserIdAndActiveTrue(userId)) {
@@ -49,7 +50,6 @@ public class DoseOverviewService {
     public List<TodayDose> getReminders(Integer userId) {
         LocalDateTime now = LocalDateTime.now(clock);
         List<TodayDose> today = getDoses(userId, now.minusHours(2).toLocalDate(), now.toLocalDate());
-        if (today == null) return null;
         return today.stream().filter(TodayDose::isReminderDue).toList();
     }
 
@@ -82,6 +82,12 @@ public class DoseOverviewService {
 
     private boolean markMissed(DoseSchedule schedule, LocalDateTime dueAt, LocalDateTime now) {
         if (now.isBefore(dueAt.plusHours(2)) || logs.existsByScheduleIdAndDueAt(schedule.getId(), dueAt)) return false;
-        return doseLogService.addDoseLog(new DoseLog(null, schedule.getId(), dueAt, "MISSED", null)) == 0;
+        try {
+            doseLogService.addDoseLog(new DoseLog(null, schedule.getId(), dueAt, "MISSED", null));
+            return true;
+        } catch (ApiException exception) {
+            if (logs.existsByScheduleIdAndDueAt(schedule.getId(), dueAt)) return false;
+            throw exception; // A concurrent recorder is harmless; other failures must surface.
+        }
     }
 }

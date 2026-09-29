@@ -1,5 +1,6 @@
 package com.example.jura.Service;
 
+import com.example.jura.Api.ApiException;
 import com.example.jura.Model.Appointment;
 import com.example.jura.Model.Meeting;
 import com.example.jura.Repository.AppointmentRepository;
@@ -24,77 +25,61 @@ public class MeetingService {
     }
 
     public Meeting getMeetingById(Integer id) {
-        return meetingRepository.findById(id).orElse(null);
+        return meetingRepository.findById(id).orElseThrow(() -> new ApiException("Meeting ID not found"));
     }
 
     public Meeting getMeetingByAppointmentId(Integer appointmentId) {
-        return meetingRepository.findMeetingByAppointmentId(appointmentId);
+        return java.util.Optional.ofNullable(meetingRepository.findMeetingByAppointmentId(appointmentId))
+                .orElseThrow(() -> new ApiException("Meeting not found for this appointment"));
     }
 
-    public int addMeeting(Meeting meeting) {
-        Appointment appointment = appointmentRepository.findById(meeting.getAppointmentId()).orElse(null);
-        if (appointment == null) {
-            return 1; // Appointment ID not found
-        }
+    public void addMeeting(Meeting meeting) {
+        Appointment appointment = appointmentRepository.findById(meeting.getAppointmentId()).orElseThrow(() -> new ApiException("Appointment ID not found"));
         if (!"APPROVED".equals(appointment.getStatus())) {
-            return 2; // Appointment is not approved
+            throw new ApiException("Appointment is not approved");
         }
         if (meetingRepository.existsByAppointmentId(meeting.getAppointmentId())) {
-            return 3; // Appointment already has a meeting
+            throw new ApiException("Appointment already has a meeting");
         }
 
         meeting.setId(null);
         meeting.setCreatedAt(LocalDateTime.now(RIYADH));
         meetingRepository.save(meeting);
-        return 0; // Meeting added successfully
     }
 
-    public int updateMeeting(Integer id, Meeting meeting) {
-        Meeting oldMeeting = meetingRepository.findById(id).orElse(null);
-        if (oldMeeting == null) {
-            return 1; // Meeting ID not found
-        }
+    public void updateMeeting(Integer id, Meeting meeting) {
+        Meeting oldMeeting = meetingRepository.findById(id).orElseThrow(() -> new ApiException("Meeting ID not found"));
         if (!oldMeeting.getAppointmentId().equals(meeting.getAppointmentId())) {
-            return 2; // Appointment ID cannot be changed
+            throw new ApiException("Appointment ID cannot be changed");
         }
 
         oldMeeting.setZoomMeetingId(meeting.getZoomMeetingId());
         oldMeeting.setJoinUrl(meeting.getJoinUrl());
         meetingRepository.save(oldMeeting);
-        return 0; // Meeting updated successfully
     }
 
-    public boolean deleteMeeting(Integer id) {
-        Meeting meeting = meetingRepository.findById(id).orElse(null);
-        if (meeting == null) {
-            return false;
-        }
+    public void deleteMeeting(Integer id) {
+        Meeting meeting = meetingRepository.findById(id).orElseThrow(() -> new ApiException("Meeting ID not found"));
 
         meetingRepository.delete(meeting);
-        return true;
     }
 
-    public JoinResult getJoinUrl(Integer appointmentId) {
-        Appointment appointment = appointmentRepository.findById(appointmentId).orElse(null);
-        if (appointment == null) {
-            return new JoinResult(1, null); // Appointment ID not found
-        }
+    public String getJoinUrl(Integer appointmentId) {
+        Appointment appointment = appointmentRepository.findById(appointmentId).orElseThrow(() -> new ApiException("Appointment ID not found"));
         if (!"APPROVED".equals(appointment.getStatus())) {
-            return new JoinResult(2, null); // Appointment is not approved
+            throw new ApiException("Appointment is not approved");
         }
 
         LocalDateTime now = LocalDateTime.now(RIYADH);
         if (now.isBefore(appointment.getStartAt()) || now.isAfter(appointment.getEndAt())) {
-            return new JoinResult(3, null); // Outside the appointment window
+            throw new ApiException("Join link is available only during the appointment window");
         }
 
         Meeting meeting = meetingRepository.findMeetingByAppointmentId(appointmentId);
         if (meeting == null) {
-            return new JoinResult(4, null); // Meeting not found
+            throw new ApiException("Meeting not found for this appointment");
         }
-        return new JoinResult(0, meeting.getJoinUrl()); // Join URL is available
+        return meeting.getJoinUrl(); // Join URL is available
     }
 
-    public record JoinResult(int code, String joinUrl) {
-    }
 }

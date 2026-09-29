@@ -1,5 +1,6 @@
 package com.example.jura.Service;
 
+import com.example.jura.Api.ApiException;
 import com.example.jura.Api.SupplementRequest;
 import com.example.jura.Model.DrugCache;
 import com.example.jura.Model.User;
@@ -30,81 +31,61 @@ public class UserItemService {
     }
 
     public UserItem getUserItemById(Integer id) {
-        return userItemRepository.findById(id).orElse(null);
+        return userItemRepository.findById(id).orElseThrow(() -> new ApiException("User item ID not found"));
     }
 
     public List<UserItem> getActiveUserItems(Integer userId) {
-        User user = userRepository.findUserById(userId);
-        if (user == null || !"PATIENT".equals(user.getRole())) {
-            return null;
+        User user = userRepository.findById(userId).orElseThrow(() -> new ApiException("Patient not found"));
+        if (!"PATIENT".equals(user.getRole())) {
+            throw new ApiException("Patient not found");
         }
         return userItemRepository.findByUserIdAndActiveTrue(userId);
     }
 
     @Transactional
-    public int addUserItem(UserItem userItem) {
+    public void addUserItem(UserItem userItem) {
         if ("SUPPLEMENT".equals(userItem.getType())) {
-            return 9; // Use add-supplement to include the ingredient list
+            throw new ApiException("Use add-supplement to include the ingredient list");
         }
-        return saveNewItem(userItem);
+        saveNewItem(userItem);
     }
 
     @Transactional
-    public int addSupplement(SupplementRequest request) {
-        int result = itemIngredientService.validateSupplementIngredients(request.getIngredients());
-        if (result != 0) {
-            return result; // Ingredient list is invalid
-        }
+    public void addSupplement(SupplementRequest request) {
+        itemIngredientService.validateSupplementIngredients(request.getIngredients());
         UserItem item = new UserItem(null, request.getUserId(), "SUPPLEMENT", request.getDisplayName(),
                 null, request.getDosageText(), true);
-        result = saveNewItem(item);
-        if (result != 0) {
-            return result; // Patient or supplement details are invalid
-        }
+        saveNewItem(item);
         itemIngredientService.saveSupplementIngredients(item.getId(), request.getIngredients());
-        return 0; // Supplement and its ingredients added successfully
     }
 
-    private int saveNewItem(UserItem userItem) {
-        User user = userRepository.findUserById(userItem.getUserId());
-        if (user == null) {
-            return 1; // User ID not found
-        }
+    private void saveNewItem(UserItem userItem) {
+        User user = userRepository.findById(userItem.getUserId()).orElseThrow(() -> new ApiException("User ID not found"));
         if (!"PATIENT".equals(user.getRole())) {
-            return 2; // User is not a patient
+            throw new ApiException("User is not a patient");
         }
 
-        int result = prepareItem(userItem);
-        if (result != 0) {
-            return result; // Invalid drug or supplement details
-        }
+        prepareItem(userItem);
 
         userItem.setId(null);
         userItem.setActive(true);
         userItemRepository.save(userItem);
         if ("DRUG".equals(userItem.getType())) {
-            itemIngredientService.syncDrugIngredients(userItem.getId());
+            itemIngredientService.syncDrugIngredientsIfAvailable(userItem.getId());
         }
-        return 0; // User item added successfully
     }
 
     @Transactional
-    public int updateUserItem(Integer id, UserItem userItem) {
-        UserItem oldItem = userItemRepository.findById(id).orElse(null);
-        if (oldItem == null) {
-            return 1; // User item ID not found
-        }
+    public void updateUserItem(Integer id, UserItem userItem) {
+        UserItem oldItem = userItemRepository.findById(id).orElseThrow(() -> new ApiException("User item ID not found"));
         if (!oldItem.getUserId().equals(userItem.getUserId())) {
-            return 2; // User ID cannot be changed
+            throw new ApiException("User ID cannot be changed");
         }
         if (!oldItem.getType().equals(userItem.getType())) {
-            return 10; // Item type cannot be changed
+            throw new ApiException("Item type cannot be changed");
         }
 
-        int result = prepareItem(userItem);
-        if (result != 0) {
-            return result; // Invalid drug or supplement details
-        }
+        prepareItem(userItem);
 
         boolean drugChanged = !Objects.equals(oldItem.getDrugCacheId(), userItem.getDrugCacheId());
         oldItem.setDisplayName(userItem.getDisplayName());
@@ -115,55 +96,47 @@ public class UserItemService {
         }
         userItemRepository.save(oldItem);
         if ("DRUG".equals(oldItem.getType()) && drugChanged) {
-            itemIngredientService.syncDrugIngredients(oldItem.getId());
+            itemIngredientService.syncDrugIngredientsIfAvailable(oldItem.getId());
         }
-        return 0; // User item updated successfully
     }
 
     @Transactional
-    public boolean deleteUserItem(Integer id) {
-        UserItem userItem = userItemRepository.findById(id).orElse(null);
-        if (userItem == null) {
-            return false;
-        }
+    public void deleteUserItem(Integer id) {
+        UserItem userItem = userItemRepository.findById(id).orElseThrow(() -> new ApiException("User item ID not found"));
         doseScheduleService.deleteDoseSchedulesByItem(id);
         interactionResultRepository.deleteByItemAIdOrItemBId(id, id);
         itemIngredientService.deleteIngredientsByItemId(id);
         userItemRepository.delete(userItem);
-        return true;
     }
 
-    private int prepareItem(UserItem userItem) {
+    private void prepareItem(UserItem userItem) {
         if ("DRUG".equals(userItem.getType())) {
             if (userItem.getDrugCacheId() == null) {
-                return 3; // Drug cache ID is required for a drug
+                throw new ApiException("Drug cache ID is required for a drug");
             }
-            DrugCache drug = drugCacheRepository.findById(userItem.getDrugCacheId()).orElse(null);
-            if (drug == null) {
-                return 4; // Drug cache ID not found
-            }
+            DrugCache drug = drugCacheRepository.findById(userItem.getDrugCacheId()).orElseThrow(() -> new ApiException("Drug cache ID not found"));
 
             String name = drug.getTradeNameAr();
             if (name == null || name.isBlank()) {
                 name = drug.getTradeNameEn();
             }
             if (name == null || name.isBlank()) {
-                return 7; // Cached drug has no trade name
+                throw new ApiException("Cached drug has no trade name");
             }
             userItem.setDisplayName(name.trim());
-            return 0; // Drug details are valid
+            return;
         }
 
         if ("SUPPLEMENT".equals(userItem.getType())) {
             if (userItem.getDrugCacheId() != null) {
-                return 6; // A supplement cannot have a drug cache ID
+                throw new ApiException("A supplement cannot have a drug cache ID");
             }
             if (userItem.getDisplayName() == null || userItem.getDisplayName().isBlank()) {
-                return 5; // Supplement name is required
+                throw new ApiException("Supplement name is required");
             }
             userItem.setDisplayName(userItem.getDisplayName().trim());
-            return 0; // Supplement details are valid
+            return;
         }
-        return 8; // Type must be DRUG or SUPPLEMENT
+        throw new ApiException("Type must be DRUG or SUPPLEMENT");
     }
 }

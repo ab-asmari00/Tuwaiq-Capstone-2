@@ -1,5 +1,6 @@
 package com.example.jura.Service;
 
+import com.example.jura.Api.ApiException;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
@@ -29,19 +30,19 @@ public class GmailService {
         return validAddress(senderEmail) && appPassword != null && !appPassword.isBlank();
     }
 
-    public boolean sendEmail(String recipient, String subject, String message) {
-        return sendEmail(recipient, subject, message, null);
+    public void sendEmail(String recipient, String subject, String message) {
+        sendEmail(recipient, subject, message, null);
     }
 
-    public boolean sendEmail(String recipient, String subject, String message, String htmlMessage) {
+    public void sendEmail(String recipient, String subject, String message, String htmlMessage) {
         if (!isConfigured()) {
             log.warn("Gmail SMTP is not configured; set GMAIL_SENDER_EMAIL and GMAIL_APP_PASSWORD");
-            return false;
+            throw new ApiException("Gmail SMTP is not configured");
         }
         if (!validAddress(recipient) || subject == null || subject.isBlank()
                 || subject.contains("\r") || subject.contains("\n") || message == null) {
             log.warn("Gmail email fields are invalid; email was not sent");
-            return false;
+            throw new ApiException("Email fields are invalid");
         }
 
         try {
@@ -57,14 +58,15 @@ public class GmailService {
                 helper.addInline("jura-logo", new ClassPathResource("static/logo.png"), "image/png");
             }
             mailSender.send(email);
-            return true;
+            return;
         } catch (MailAuthenticationException exception) {
             log.warn("Gmail SMTP authentication failed; check sender email and Google App Password");
+            throw new ApiException("Gmail SMTP authentication failed");
         } catch (MailException | MessagingException exception) {
             // Do not log provider responses, passwords, recipients or email contents.
             log.warn("Gmail SMTP email failed ({})", exception.getClass().getSimpleName());
         }
-        return false;
+        throw new ApiException("Gmail SMTP could not send the email");
     }
 
     private boolean validAddress(String address) {

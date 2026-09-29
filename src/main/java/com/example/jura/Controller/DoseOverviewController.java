@@ -16,13 +16,11 @@ public class DoseOverviewController {
     @GetMapping("/today/{userId}")
     public ResponseEntity<?> today(@PathVariable Integer userId) {
         List<TodayDose> doses = overviewService.getToday(userId);
-        if (doses == null) return ResponseEntity.status(404).body(new ApiResponse("Patient not found"));
         return ResponseEntity.status(200).body(doses);
     }
     @GetMapping("/reminders/{userId}")
     public ResponseEntity<?> reminders(@PathVariable Integer userId) {
         List<TodayDose> doses = overviewService.getReminders(userId);
-        if (doses == null) return ResponseEntity.status(404).body(new ApiResponse("Patient not found"));
         return ResponseEntity.status(200).body(doses);
     }
 }

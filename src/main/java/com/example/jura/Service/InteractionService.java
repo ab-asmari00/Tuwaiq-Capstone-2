@@ -1,5 +1,6 @@
 package com.example.jura.Service;
 
+import com.example.jura.Api.ApiException;
 import com.example.jura.Api.GeminiInteractionResponse;
 import com.example.jura.Api.InteractionCheckResponse;
 import com.example.jura.Model.*;
@@ -25,23 +26,20 @@ public class InteractionService {
     private final GeminiService geminiService;
 
     // No database transaction is kept open during the external AI request.
-    public CheckOutcome checkInteractions(Integer itemId) {
-        UserItem selected = itemRepository.findById(itemId).orElse(null);
-        if (selected == null) {
-            return new CheckOutcome(1, null); // Item ID not found
-        }
+    public InteractionCheckResponse checkInteractions(Integer itemId) {
+        UserItem selected = itemRepository.findById(itemId).orElseThrow(() -> new ApiException("User item ID not found"));
         if (!Boolean.TRUE.equals(selected.getActive())) {
-            return new CheckOutcome(2, null); // Selected item must be active
+            throw new ApiException("Selected item must be active");
         }
-        User patient = userRepository.findUserById(selected.getUserId());
-        if (patient == null || !"PATIENT".equals(patient.getRole())) {
-            return new CheckOutcome(3, null); // Item must belong to an existing patient
+        User patient = userRepository.findById(selected.getUserId()).orElseThrow(() -> new ApiException("Item must belong to an existing patient"));
+        if (!"PATIENT".equals(patient.getRole())) {
+            throw new ApiException("Item must belong to an existing patient");
         }
         List<UserItem> otherItems = itemRepository.findByUserIdAndActiveTrue(selected.getUserId()).stream()
                 .filter(item -> !item.getId().equals(itemId)).toList();
         if (otherItems.isEmpty()) {
-            return new CheckOutcome(0, new InteractionCheckResponse(
-                    "No other active items to compare. No interaction assessment was performed.", List.of())); // Nothing to compare
+            return new InteractionCheckResponse(
+                    "No other active items to compare. No interaction assessment was performed.", List.of()); // Nothing to compare
         }
 
         List<ItemIngredient> selectedIngredients = ingredientRepository.findByItemId(itemId);
@@ -58,7 +56,7 @@ public class InteractionService {
         Map<Integer, GeminiInteractionResponse.PairResult> findings = new HashMap<>();
         if (!checkable.isEmpty()) {
             if (!geminiService.isConfigured()) {
-                return new CheckOutcome(4, null); // Gemini is not configured
+                throw new ApiException("Gemini is not configured");
             }
             Map<String, Object> input = Map.of(
                     "selectedItem", itemInput(selected, selectedIngredients),
@@ -78,10 +76,10 @@ public class InteractionService {
             } catch (RestClientResponseException exception) {
                 log.warn("Gemini interaction request returned HTTP {}: {}",
                         exception.getStatusCode().value(), geminiService.describeError(exception));
-                return new CheckOutcome(5, null); // Provider rejected the request; no results saved
+                throw new ApiException("Gemini could not check interactions. No results were saved; retry later.");
             } catch (RestClientException exception) {
                 log.warn("Gemini interaction request failed (connection or timeout)");
-                return new CheckOutcome(5, null); // Provider unavailable; no results saved
+                throw new ApiException("Gemini could not check interactions. No results were saved; retry later.");
             }
         }
 
@@ -109,9 +107,9 @@ public class InteractionService {
             }
             results.add(result);
         }
-        return new CheckOutcome(0, new InteractionCheckResponse(
+        return new InteractionCheckResponse(
                 "Prototype AI assessment. NONE_IDENTIFIED does not guarantee safety. Results reflect the data at check time.",
-                resultRepository.saveAll(results))); // Results checked and saved
+                resultRepository.saveAll(results)); // Results checked and saved
     }
 
     private boolean hasIngredients(List<ItemIngredient> ingredients) {
@@ -125,39 +123,34 @@ public class InteractionService {
                 "dosageText", item.getDosageText() == null ? "" : item.getDosageText());
     }
 
-    public int addResult(AiInteractionResult result) {
-        int code = validatePair(result);
-        if (code != 0) return code; // Invalid pair
+    public void addResult(AiInteractionResult result) {
+        validatePair(result);
         result.setId(null);
         prepareManualResult(result);
         resultRepository.save(result);
-        return 0; // Manual course result added
     }
 
-    public int updateResult(Integer id, AiInteractionResult result) {
-        AiInteractionResult old = resultRepository.findById(id).orElse(null);
-        if (old == null) return 1; // Result ID not found
+    public void updateResult(Integer id, AiInteractionResult result) {
+        AiInteractionResult old = resultRepository.findById(id)
+                .orElseThrow(() -> new ApiException("Interaction result ID not found"));
         if (!Objects.equals(old.getItemAId(), result.getItemAId()) || !Objects.equals(old.getItemBId(), result.getItemBId()))
-            return 4; // Pair IDs cannot be changed
-        int code = validatePair(result);
-        if (code != 0) return code; // Invalid pair
+            throw new ApiException("Pair IDs cannot be changed");
+        validatePair(result);
         old.setResultStatus(result.getResultStatus());
         old.setExplanationAr(result.getExplanationAr());
         old.setAdviceAr(result.getAdviceAr());
         prepareManualResult(old);
         resultRepository.save(old);
-        return 0; // Result manually updated and labelled MANUAL
     }
 
-    private int validatePair(AiInteractionResult result) {
+    private void validatePair(AiInteractionResult result) {
         UserItem first = itemRepository.findById(result.getItemAId()).orElse(null);
         UserItem second = itemRepository.findById(result.getItemBId()).orElse(null);
-        if (first == null || second == null) return 2; // Item ID not found
+        if (first == null || second == null) throw new ApiException("Item ID not found");
         if (first.getId().equals(second.getId()) || !Objects.equals(first.getUserId(), second.getUserId()))
-            return 3; // Two different items belonging to the same patient are required
-        User patient = userRepository.findUserById(first.getUserId());
-        if (patient == null || !"PATIENT".equals(patient.getRole())) return 3; // Existing patient required
-        return 0; // Pair is valid
+            throw new ApiException("Two different items belonging to the same patient are required");
+        User patient = userRepository.findById(first.getUserId()).orElseThrow(() -> new ApiException("Existing patient required"));
+        if (!"PATIENT".equals(patient.getRole())) throw new ApiException("Existing patient required");
     }
 
     private void prepareManualResult(AiInteractionResult result) {
@@ -171,22 +164,20 @@ public class InteractionService {
     }
 
     public AiInteractionResult getResultById(Integer id) {
-        return resultRepository.findById(id).orElse(null);
+        return resultRepository.findById(id).orElseThrow(() -> new ApiException("Interaction result ID not found"));
     }
 
     public List<AiInteractionResult> getResultsByItem(Integer itemId) {
         if (!itemRepository.existsById(itemId)) {
-            return null;
+            throw new ApiException("User item ID not found");
         }
         return resultRepository.findByItemAIdOrItemBIdOrderByCheckedAtDesc(itemId, itemId);
     }
 
-    public boolean deleteResult(Integer id) {
-        AiInteractionResult result = resultRepository.findById(id).orElse(null);
-        if (result == null) return false;
+    public void deleteResult(Integer id) {
+        AiInteractionResult result = resultRepository.findById(id)
+                .orElseThrow(() -> new ApiException("Interaction result ID not found"));
         resultRepository.delete(result);
-        return true;
     }
 
-    public record CheckOutcome(int code, InteractionCheckResponse response) { }
 }

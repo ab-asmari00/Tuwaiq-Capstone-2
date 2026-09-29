@@ -182,7 +182,9 @@ async function recordDose(dose, status) {
   try {
     await api(logId ? `dose-log/update/${logId}` : 'dose-log/add', logId ? 'PUT' : 'POST', payload);
   } catch (error) {
-    if (error.status !== 409 || logId) throw error;
+    const duplicate = error.status === 409 || (error.status === 400 &&
+      error.message === 'This scheduled dose already has a log; update the existing log');
+    if (!duplicate || logId) throw error;
     // The missed-dose scanner can create a row after the page was loaded.
     const records = list(await api(`dose-log/get-by-schedule/${dose.scheduleId}`));
     const existing = records.find(log => saudiDateTime(log.dueAt).getTime() === saudiDateTime(dose.dueAt).getTime());
@@ -365,7 +367,7 @@ function appointmentForm(doctorId, appointment = null) {
 }
 async function doctorPage(version) {
   let profile;
-  try { profile = await api(`doctor/get-by-user-id/${state.user.id}`); } catch (error) { if (error.status !== 404) throw error; }
+  try { profile = await api(`doctor/get-by-user-id/${state.user.id}`); } catch (error) { if (error.status !== 404 && !(error.status === 400 && error.message === 'Doctor profile not found')) throw error; }
   if (!profile) return `<div class="notice info"><h2>${T('Finish your doctor profile')}</h2><p>${T('Add your specialty and bio in My profile to receive appointment requests.')}</p>${button('My profile','navigate','profile')}</div>`;
   const appointments = list(await api(`appointment/get-by-doctor/${state.user.id}`));
   const ids = [...new Set(appointments.map(a=>a.patientId))]; const names = await Promise.all(ids.map(userName)); const nameMap = new Map(ids.map((id,i)=>[id,names[i]]));
@@ -389,7 +391,7 @@ async function profilePage(version) {
   const profile = { name: raw.name, email: raw.email, medicalConditions: raw.medicalConditions };
   let doctorProfile = null;
   if (state.user.role === 'DOCTOR') {
-    try { doctorProfile = await api(`doctor/get-by-user-id/${userId}`); } catch (error) { if (error.status !== 404) throw error; }
+    try { doctorProfile = await api(`doctor/get-by-user-id/${userId}`); } catch (error) { if (error.status !== 404 && !(error.status === 400 && error.message === 'Doctor profile not found')) throw error; }
   }
   if (version !== renderVersion) return '';
   state.hasDoctorProfile = !!doctorProfile;

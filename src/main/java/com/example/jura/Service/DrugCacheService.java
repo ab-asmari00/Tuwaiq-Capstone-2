@@ -1,5 +1,6 @@
 package com.example.jura.Service;
 
+import com.example.jura.Api.ApiException;
 import com.example.jura.Model.DrugCache;
 import com.example.jura.Repository.DrugCacheRepository;
 import com.example.jura.Repository.UserItemRepository;
@@ -17,40 +18,35 @@ public class DrugCacheService {
     private final Clock clock;
 
     public List<DrugCache> getAllDrugCaches() { return drugCacheRepository.findAll(); }
-    public DrugCache getDrugCacheById(Integer id) { return drugCacheRepository.findById(id).orElse(null); }
+    public DrugCache getDrugCacheById(Integer id) { return drugCacheRepository.findById(id).orElseThrow(() -> new ApiException("Drug cache ID not found")); }
 
-    public int addDrugCache(DrugCache drug) {
-        if (!hasTradeName(drug)) return 4; // At least one trade name is required
+    public void addDrugCache(DrugCache drug) {
+        if (!hasTradeName(drug)) throw new ApiException("At least one trade name is required");
         drug.setSfdaRegNo(drug.getSfdaRegNo().trim());
-        if (drugCacheRepository.existsBySfdaRegNo(drug.getSfdaRegNo())) return 2; // Registration number already exists
+        if (drugCacheRepository.existsBySfdaRegNo(drug.getSfdaRegNo())) throw new ApiException("Registration number already exists");
         drug.setId(null);
         prepare(drug);
         drugCacheRepository.save(drug);
-        return 0; // Local cache record added
     }
 
-    public int updateDrugCache(Integer id, DrugCache drug) {
+    public void updateDrugCache(Integer id, DrugCache drug) {
         DrugCache old = getDrugCacheById(id);
-        if (old == null) return 1; // Cache ID not found
-        if (userItemRepository.existsByDrugCacheId(id)) return 3; // Referenced drug cache cannot be edited through course CRUD
-        if (!hasTradeName(drug)) return 4; // At least one trade name is required
+        if (userItemRepository.existsByDrugCacheId(id)) throw new ApiException("Referenced drug cache cannot be edited through course CRUD");
+        if (!hasTradeName(drug)) throw new ApiException("At least one trade name is required");
         String regNo = drug.getSfdaRegNo().trim();
-        if (drugCacheRepository.existsBySfdaRegNoAndIdNot(regNo, id)) return 2; // Registration number already exists
+        if (drugCacheRepository.existsBySfdaRegNoAndIdNot(regNo, id)) throw new ApiException("Registration number already exists");
         old.setSfdaRegNo(regNo);
         old.setTradeNameAr(drug.getTradeNameAr());
         old.setTradeNameEn(drug.getTradeNameEn());
         old.setScientificNameRaw(drug.getScientificNameRaw());
         prepare(old);
         drugCacheRepository.save(old);
-        return 0; // Local cache record updated
     }
 
-    public int deleteDrugCache(Integer id) {
+    public void deleteDrugCache(Integer id) {
         DrugCache drug = getDrugCacheById(id);
-        if (drug == null) return 1; // Cache ID not found
-        if (userItemRepository.existsByDrugCacheId(id)) return 3; // Drug cache is referenced by a user item
+        if (userItemRepository.existsByDrugCacheId(id)) throw new ApiException("Drug cache is referenced by a user item");
         drugCacheRepository.delete(drug);
-        return 0; // Local cache record deleted
     }
 
     private boolean hasTradeName(DrugCache drug) {

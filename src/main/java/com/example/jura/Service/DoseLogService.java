@@ -1,5 +1,6 @@
 package com.example.jura.Service;
 
+import com.example.jura.Api.ApiException;
 import com.example.jura.Api.AdherenceSummary;
 import com.example.jura.Model.DoseLog;
 import com.example.jura.Model.DoseSchedule;
@@ -35,19 +36,19 @@ public class DoseLogService {
     }
 
     public DoseLog getDoseLogById(Integer id) {
-        return doseLogRepository.findById(id).orElse(null);
+        return doseLogRepository.findById(id).orElseThrow(() -> new ApiException("Dose log ID not found"));
     }
 
     public List<DoseLog> getDoseLogsBySchedule(Integer scheduleId) {
         if (!doseScheduleRepository.existsById(scheduleId)) {
-            return null;
+            throw new ApiException("Dose schedule ID not found");
         }
         return doseLogRepository.findByScheduleIdOrderByDueAtDesc(scheduleId);
     }
 
     public List<DoseLog> getDoseLogsByItem(Integer itemId) {
         if (!userItemRepository.existsById(itemId)) {
-            return null;
+            throw new ApiException("User item ID not found");
         }
         List<Integer> scheduleIds = doseScheduleRepository.findByItemIdOrderByLocalTimeAsc(itemId).stream()
                 .map(DoseSchedule::getId).toList();
@@ -58,8 +59,8 @@ public class DoseLogService {
     }
 
     public AdherenceSummary getAdherence(Integer userId) {
-        User patient = userRepository.findUserById(userId);
-        if (patient == null || !"PATIENT".equals(patient.getRole())) return null;
+        User patient = userRepository.findById(userId).orElseThrow(() -> new ApiException("Patient not found"));
+        if (!"PATIENT".equals(patient.getRole())) throw new ApiException("Patient not found");
         List<Integer> scheduleIds = userItemRepository.findByUserId(userId).stream()
                 .flatMap(item -> doseScheduleRepository.findByItemIdOrderByLocalTimeAsc(item.getId()).stream())
                 .map(DoseSchedule::getId).toList();
@@ -72,13 +73,10 @@ public class DoseLogService {
                 total == 0 ? null : Math.round(taken * 10000.0 / total) / 100.0);
     }
 
-    public int addDoseLog(DoseLog doseLog) {
-        int result = validateDoseLog(doseLog, true);
-        if (result != 0) {
-            return result; // Dose log details are invalid
-        }
+    public void addDoseLog(DoseLog doseLog) {
+        validateDoseLog(doseLog, true);
         if (doseLogRepository.existsByScheduleIdAndDueAt(doseLog.getScheduleId(), doseLog.getDueAt())) {
-            return 5; // This scheduled dose already has a log; update the existing log
+            throw new ApiException("This scheduled dose already has a log; update the existing log");
         }
         doseLog.setId(null);
         try {
@@ -86,63 +84,45 @@ public class DoseLogService {
             doseLogRepository.saveAndFlush(doseLog);
         } catch (DataIntegrityViolationException exception) {
             if (doseLogRepository.existsByScheduleIdAndDueAt(doseLog.getScheduleId(), doseLog.getDueAt())) {
-                return 5; // Another request already logged this scheduled dose
+                throw new ApiException("This scheduled dose already has a log; update the existing log");
             }
             throw exception;
         }
-        return 0; // Dose log added successfully
     }
 
     @Transactional
-    public int updateDoseLog(Integer id, DoseLog doseLog) {
-        DoseLog oldLog = doseLogRepository.findById(id).orElse(null);
-        if (oldLog == null) {
-            return 1; // Dose log ID not found
-        }
+    public void updateDoseLog(Integer id, DoseLog doseLog) {
+        DoseLog oldLog = doseLogRepository.findById(id).orElseThrow(() -> new ApiException("Dose log ID not found"));
         if (!oldLog.getScheduleId().equals(doseLog.getScheduleId())
                 || !oldLog.getDueAt().equals(doseLog.getDueAt())) {
-            return 6; // Schedule ID and due time cannot be changed
+            throw new ApiException("Schedule ID and due time cannot be changed");
         }
         if ("TAKEN".equals(doseLog.getStatus()) && "TAKEN".equals(oldLog.getStatus())
                 && doseLog.getTakenAt() == null) {
             doseLog.setTakenAt(oldLog.getTakenAt());
         }
         // Existing due time remains historical if the schedule was edited later.
-        int result = validateDoseLog(doseLog, false);
-        if (result != 0) {
-            return result; // Dose log details are invalid
-        }
+        validateDoseLog(doseLog, false);
         oldLog.setStatus(doseLog.getStatus());
         oldLog.setTakenAt(doseLog.getTakenAt());
         doseLogRepository.save(oldLog);
-        return 0; // Dose log updated successfully
     }
 
     @Transactional
-    public boolean deleteDoseLog(Integer id) {
-        DoseLog doseLog = doseLogRepository.findById(id).orElse(null);
-        if (doseLog == null) {
-            return false;
-        }
+    public void deleteDoseLog(Integer id) {
+        DoseLog doseLog = doseLogRepository.findById(id).orElseThrow(() -> new ApiException("Dose log ID not found"));
         doseLogRepository.delete(doseLog);
-        return true;
     }
 
-    private int validateDoseLog(DoseLog doseLog, boolean checkScheduleTime) {
+    private void validateDoseLog(DoseLog doseLog, boolean checkScheduleTime) {
         if (doseLog.getScheduleId() == null || doseLog.getDueAt() == null || doseLog.getStatus() == null) {
-            return 9; // Required dose log fields are missing
+            throw new ApiException("Required fields are missing or status is invalid");
         }
-        DoseSchedule schedule = doseScheduleRepository.findById(doseLog.getScheduleId()).orElse(null);
-        if (schedule == null) {
-            return 2; // Dose schedule ID not found
-        }
-        UserItem item = userItemRepository.findById(schedule.getItemId()).orElse(null);
-        if (item == null) {
-            return 8; // Scheduled item or its patient no longer exists
-        }
-        User patient = userRepository.findUserById(item.getUserId());
-        if (patient == null || !"PATIENT".equals(patient.getRole())) {
-            return 8; // Scheduled item must belong to an existing patient
+        DoseSchedule schedule = doseScheduleRepository.findById(doseLog.getScheduleId()).orElseThrow(() -> new ApiException("Dose schedule ID not found"));
+        UserItem item = userItemRepository.findById(schedule.getItemId()).orElseThrow(() -> new ApiException("Scheduled item must belong to an existing patient"));
+        User patient = userRepository.findById(item.getUserId()).orElseThrow(() -> new ApiException("Scheduled item must belong to an existing patient"));
+        if (!"PATIENT".equals(patient.getRole())) {
+            throw new ApiException("Scheduled item must belong to an existing patient");
         }
         if (checkScheduleTime) {
             LocalDate date = doseLog.getDueAt().toLocalDate();
@@ -150,7 +130,7 @@ public class DoseLogService {
                     || (schedule.getEndDate() != null && date.isAfter(schedule.getEndDate()))
                     || !Arrays.asList(schedule.getDaysOfWeek().split(",")).contains(date.getDayOfWeek().name())
                     || !doseLog.getDueAt().toLocalTime().equals(schedule.getLocalTime())) {
-                return 3; // Due date and time do not match the schedule
+                throw new ApiException("Due date and time do not match the schedule");
             }
         }
         LocalDateTime now = LocalDateTime.now(clock);
@@ -159,19 +139,19 @@ public class DoseLogService {
                 doseLog.setTakenAt(now);
             }
             if (doseLog.getTakenAt().isAfter(now)) {
-                return 4; // Taken time cannot be in the future
+                throw new ApiException("Only TAKEN doses may have takenAt, and it cannot be in the future");
             }
-            return 0; // Taken dose is valid
+            return;
         }
         if ("SKIPPED".equals(doseLog.getStatus()) || "MISSED".equals(doseLog.getStatus())) {
             if (doseLog.getTakenAt() != null) {
-                return 4; // Only TAKEN doses may have a taken time
+                throw new ApiException("Only TAKEN doses may have takenAt, and it cannot be in the future");
             }
             if ("MISSED".equals(doseLog.getStatus()) && !doseLog.getDueAt().isBefore(now)) {
-                return 7; // A dose can be marked MISSED only after it is due
+                throw new ApiException("A dose can be marked MISSED only after it is due");
             }
-            return 0; // Skipped or missed dose is valid
+            return;
         }
-        return 9; // Status must be TAKEN, SKIPPED, or MISSED
+        throw new ApiException("Required fields are missing or status is invalid");
     }
 }

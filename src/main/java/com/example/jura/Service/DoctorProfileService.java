@@ -1,5 +1,6 @@
 package com.example.jura.Service;
 
+import com.example.jura.Api.ApiException;
 import com.example.jura.Model.DoctorProfile;
 import com.example.jura.Model.User;
 import com.example.jura.Repository.DoctorProfileRepository;
@@ -18,6 +19,9 @@ public class DoctorProfileService {
     private final DataCleanupService dataCleanupService;
 
     public List<DoctorProfile> searchDoctors(String specialty) {
+        if (specialty == null || specialty.isBlank() || specialty.length() > 100) {
+            throw new ApiException("Specialty must be 1 to 100 characters");
+        }
         return doctorProfileRepository.findBySpecialtyContainingIgnoreCase(specialty.trim());
     }
 
@@ -26,48 +30,39 @@ public class DoctorProfileService {
     }
 
     public DoctorProfile getDoctorProfileByUserId(Integer userId) {
-        return doctorProfileRepository.findById(userId).orElse(null);
+        return doctorProfileRepository.findById(userId).orElseThrow(() -> new ApiException("Doctor profile not found"));
     }
 
-    public int addDoctorProfile(DoctorProfile doctorProfile) {
-        User user = userRepository.findUserById(doctorProfile.getUserId());
-        if (user == null) {
-            return 1; // User ID not found
-        }
+    public void addDoctorProfile(DoctorProfile doctorProfile) {
+        User user = userRepository.findById(doctorProfile.getUserId()).orElseThrow(() -> new ApiException("User ID not found"));
 
         if (!"DOCTOR".equals(user.getRole())) {
-            return 2; // User is not a doctor
+            throw new ApiException("User is not a doctor");
         }
 
         if (doctorProfileRepository.existsById(doctorProfile.getUserId())) {
-            return 3; // Doctor profile already exists
+            throw new ApiException("Doctor profile already exists");
         }
 
         doctorProfileRepository.save(doctorProfile);
-        return 0; // Doctor profile added successfully
     }
 
-    public int updateDoctorProfile(Integer userId, DoctorProfile doctorProfile) {
-        DoctorProfile oldProfile = doctorProfileRepository.findById(userId).orElse(null);
-        if (oldProfile == null) {
-            return 1; // Doctor profile not found
+    public void updateDoctorProfile(Integer userId, DoctorProfile doctorProfile) {
+        if (!userId.equals(doctorProfile.getUserId())) {
+            throw new ApiException("User ID in body must match URL");
         }
+        DoctorProfile oldProfile = doctorProfileRepository.findById(userId).orElseThrow(() -> new ApiException("Doctor profile not found"));
 
         oldProfile.setSpecialty(doctorProfile.getSpecialty());
         oldProfile.setBio(doctorProfile.getBio());
         doctorProfileRepository.save(oldProfile);
-        return 0; // Doctor profile updated successfully
     }
 
     @Transactional
-    public boolean deleteDoctorProfile(Integer userId) {
-        DoctorProfile doctorProfile = doctorProfileRepository.findById(userId).orElse(null);
-        if (doctorProfile == null) {
-            return false;
-        }
+    public void deleteDoctorProfile(Integer userId) {
+        DoctorProfile doctorProfile = doctorProfileRepository.findById(userId).orElseThrow(() -> new ApiException("Doctor profile not found"));
 
         dataCleanupService.cleanupDoctorAppointments(userId);
         doctorProfileRepository.delete(doctorProfile);
-        return true;
     }
 }

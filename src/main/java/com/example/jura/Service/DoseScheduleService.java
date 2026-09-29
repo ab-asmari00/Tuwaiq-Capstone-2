@@ -1,5 +1,6 @@
 package com.example.jura.Service;
 
+import com.example.jura.Api.ApiException;
 import com.example.jura.Model.DoseSchedule;
 import com.example.jura.Model.User;
 import com.example.jura.Model.UserItem;
@@ -28,57 +29,42 @@ public class DoseScheduleService {
     }
 
     public DoseSchedule getDoseScheduleById(Integer id) {
-        return doseScheduleRepository.findById(id).orElse(null);
+        return doseScheduleRepository.findById(id).orElseThrow(() -> new ApiException("Dose schedule ID not found"));
     }
 
     public List<DoseSchedule> getDoseSchedulesByItem(Integer itemId) {
         if (!userItemRepository.existsById(itemId)) {
-            return null;
+            throw new ApiException("User item ID not found");
         }
         return doseScheduleRepository.findByItemIdOrderByLocalTimeAsc(itemId);
     }
 
     @Transactional
-    public int addDoseSchedule(DoseSchedule schedule) {
-        int result = validateSchedule(schedule);
-        if (result != 0) {
-            return result; // Schedule details are invalid
-        }
+    public void addDoseSchedule(DoseSchedule schedule) {
+        validateSchedule(schedule);
         schedule.setId(null);
         doseScheduleRepository.save(schedule);
-        return 0; // Dose schedule added successfully
     }
 
     @Transactional
-    public int updateDoseSchedule(Integer id, DoseSchedule schedule) {
-        DoseSchedule oldSchedule = doseScheduleRepository.findById(id).orElse(null);
-        if (oldSchedule == null) {
-            return 1; // Dose schedule ID not found
-        }
+    public void updateDoseSchedule(Integer id, DoseSchedule schedule) {
+        DoseSchedule oldSchedule = doseScheduleRepository.findById(id).orElseThrow(() -> new ApiException("Dose schedule ID not found"));
         if (!oldSchedule.getItemId().equals(schedule.getItemId())) {
-            return 7; // Item ID cannot be changed
+            throw new ApiException("Item ID cannot be changed");
         }
-        int result = validateSchedule(schedule);
-        if (result != 0) {
-            return result; // Schedule details are invalid
-        }
+        validateSchedule(schedule);
         oldSchedule.setLocalTime(schedule.getLocalTime());
         oldSchedule.setDaysOfWeek(schedule.getDaysOfWeek());
         oldSchedule.setStartDate(schedule.getStartDate());
         oldSchedule.setEndDate(schedule.getEndDate());
         doseScheduleRepository.save(oldSchedule);
-        return 0; // Dose schedule updated successfully
     }
 
     @Transactional
-    public boolean deleteDoseSchedule(Integer id) {
-        DoseSchedule schedule = doseScheduleRepository.findById(id).orElse(null);
-        if (schedule == null) {
-            return false;
-        }
+    public void deleteDoseSchedule(Integer id) {
+        DoseSchedule schedule = doseScheduleRepository.findById(id).orElseThrow(() -> new ApiException("Dose schedule ID not found"));
         doseLogRepository.deleteByScheduleId(id);
         doseScheduleRepository.delete(schedule);
-        return true;
     }
 
     @Transactional
@@ -90,39 +76,35 @@ public class DoseScheduleService {
         doseScheduleRepository.deleteAll(schedules);
     }
 
-    private int validateSchedule(DoseSchedule schedule) {
+    private void validateSchedule(DoseSchedule schedule) {
         if (schedule.getItemId() == null || schedule.getLocalTime() == null
                 || schedule.getStartDate() == null || schedule.getDaysOfWeek() == null
                 || schedule.getDaysOfWeek().isBlank()) {
-            return 9; // Required schedule fields are missing
+            throw new ApiException("Required schedule fields are missing");
         }
-        UserItem item = userItemRepository.findById(schedule.getItemId()).orElse(null);
-        if (item == null) {
-            return 2; // User item ID not found
-        }
+        UserItem item = userItemRepository.findById(schedule.getItemId()).orElseThrow(() -> new ApiException("User item ID not found"));
         if (!Boolean.TRUE.equals(item.getActive())) {
-            return 3; // User item must be active
+            throw new ApiException("User item must be active");
         }
-        User patient = userRepository.findUserById(item.getUserId());
-        if (patient == null || !"PATIENT".equals(patient.getRole())) {
-            return 8; // Item must belong to an existing patient
+        User patient = userRepository.findById(item.getUserId()).orElseThrow(() -> new ApiException("Item must belong to an existing patient"));
+        if (!"PATIENT".equals(patient.getRole())) {
+            throw new ApiException("Item must belong to an existing patient");
         }
         if (schedule.getEndDate() != null && schedule.getEndDate().isBefore(schedule.getStartDate())) {
-            return 5; // End date cannot be before start date
+            throw new ApiException("End date cannot be before start date");
         }
         if (schedule.getDaysOfWeek().length() > 100) {
-            return 4; // Days of week are invalid
+            throw new ApiException("Days of week are invalid");
         }
         List<String> validDays = List.of("MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY", "SUNDAY");
         Set<String> selectedDays = new HashSet<>();
         for (String day : schedule.getDaysOfWeek().split(",", -1)) {
             if (!validDays.contains(day)) {
-                return 4; // Use uppercase day names separated by commas, without spaces
+                throw new ApiException("Use uppercase day names separated by commas, without spaces");
             }
             if (!selectedDays.add(day)) {
-                return 6; // The same day cannot be repeated
+                throw new ApiException("The same day cannot be repeated");
             }
         }
-        return 0; // Schedule details are valid
     }
 }

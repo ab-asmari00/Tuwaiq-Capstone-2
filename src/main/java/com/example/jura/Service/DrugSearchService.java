@@ -1,5 +1,6 @@
 package com.example.jura.Service;
 
+import com.example.jura.Api.ApiException;
 import com.example.jura.Api.DrugSearchItem;
 import com.example.jura.Api.DrugSearchResponse;
 import com.example.jura.Model.DrugCache;
@@ -21,6 +22,11 @@ public class DrugSearchService {
     }
 
     public DrugSearchResponse search(String query, int page) {
+        if (query == null || query.isBlank() || query.trim().length() > 100) {
+            throw new ApiException("Search name must be 1 to 100 characters");
+        }
+        if (page < 1) throw new ApiException("Page must be at least 1");
+        if (isCatalogEmpty()) throw new ApiException("Drug catalog has not been synced yet");
         String name = query.trim();
         PageRequest pageable = PageRequest.of(page - 1, 20);
         Page<DrugCache> matches;

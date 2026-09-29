@@ -27,8 +27,8 @@ public class AppointmentEmailService {
     private String frontendUrl = "http://localhost:8080/";
 
     public void notifyRequested(Appointment appointment) {
-        User patient = userRepository.findUserById(appointment.getPatientId());
-        User doctor = userRepository.findUserById(appointment.getDoctorId());
+        User patient = userRepository.findById(appointment.getPatientId()).orElse(null);
+        User doctor = userRepository.findById(appointment.getDoctorId()).orElse(null);
         if (patient == null || doctor == null) {
             log.warn("Appointment request email recipients were not found");
             return;
@@ -52,8 +52,8 @@ public class AppointmentEmailService {
     }
 
     public void notifyApproved(Appointment appointment) {
-        User patient = userRepository.findUserById(appointment.getPatientId());
-        User doctor = userRepository.findUserById(appointment.getDoctorId());
+        User patient = userRepository.findById(appointment.getPatientId()).orElse(null);
+        User doctor = userRepository.findById(appointment.getDoctorId()).orElse(null);
         if (patient == null || doctor == null) {
             log.warn("Appointment approval email recipients were not found");
             return;
@@ -137,9 +137,7 @@ public class AppointmentEmailService {
 
     private void sendSafely(String recipient, String subject, String message, String html) {
         try {
-            if (!gmailService.sendEmail(recipient, subject, message, html)) {
-                log.warn("Appointment email was not sent; appointment remains saved");
-            }
+            gmailService.sendEmail(recipient, subject, message, html);
         } catch (RuntimeException exception) {
             log.warn("Appointment email failed ({}); appointment remains saved",
                     exception.getClass().getSimpleName());

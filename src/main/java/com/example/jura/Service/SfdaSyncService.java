@@ -1,5 +1,8 @@
 package com.example.jura.Service;
 
+import com.example.jura.Api.ApiException;
+import org.springframework.web.client.RestClientException;
+
 import com.example.jura.Model.DrugCache;
 import com.example.jura.Repository.DrugCacheRepository;
 import java.time.LocalDateTime;
@@ -31,6 +34,15 @@ public class SfdaSyncService {
     }
 
     public synchronized SyncResult syncAllDrugs() {
+        try {
+            return synchronizeDrugs();
+        } catch (RestClientException | IllegalStateException exception) {
+            log.warn("SFDA drug sync failed ({})", exception.getClass().getSimpleName());
+            throw new ApiException("SFDA drug sync failed; retry later");
+        }
+    }
+
+    private SyncResult synchronizeDrugs() {
         SfdaPage firstPage = fetchPage(1);
         int pageCount = firstPage.pageCount();
         if (pageCount < 1 || pageCount > 1000) {

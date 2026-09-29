@@ -28,6 +28,10 @@ A Saudi-focused personal health companion built as a course project. Manage medi
 
 Java 17+, Spring Boot, Spring Data JPA, Validation, Lombok, Spring Mail, MySQL, and HTML/CSS/JavaScript. SFDA, Gemini, and Zoom integrations use `RestClient`; email uses SMTP.
 
+## Error Handling
+
+Services throw `ApiException` for invalid requests, missing records, conflicts, and integration failures. The global `ControllerAdvice` returns HTTP `400` with a descriptive `message`. Controllers return success responses after service operations complete. Appointment email failures are logged without undoing saved appointments.
+
 ## API Endpoints
 
 All paths below start with `/api/v1`.
