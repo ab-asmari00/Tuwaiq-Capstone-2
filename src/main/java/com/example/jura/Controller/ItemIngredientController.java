@@ -34,6 +34,9 @@ public class ItemIngredientController {
     @GetMapping("/get-by-item/{itemId}")
     public ResponseEntity<?> getIngredientsByItemId(@PathVariable Integer itemId) {
         List<ItemIngredient> ingredients = itemIngredientService.getIngredientsByItemId(itemId);
+        if (ingredients.isEmpty()) {
+            return ResponseEntity.status(200).body(new ApiResponse("Ingredients list is empty"));
+        }
         return ResponseEntity.status(200).body(ingredients);
     }
 

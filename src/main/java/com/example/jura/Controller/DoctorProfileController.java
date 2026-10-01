@@ -18,7 +18,11 @@ public class DoctorProfileController {
 
     @GetMapping("/search")
     public ResponseEntity<?> searchDoctors(@RequestParam String specialty) {
-        return ResponseEntity.status(200).body(doctorProfileService.searchDoctors(specialty));
+        List<DoctorProfile> profiles = doctorProfileService.searchDoctors(specialty);
+        if (profiles.isEmpty()) {
+            return ResponseEntity.status(200).body(new ApiResponse("Doctor profiles list is empty"));
+        }
+        return ResponseEntity.status(200).body(profiles);
     }
 
     @GetMapping("/getAll")

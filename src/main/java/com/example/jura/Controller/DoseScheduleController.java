@@ -34,6 +34,9 @@ public class DoseScheduleController {
     @GetMapping("/get-by-item/{itemId}")
     public ResponseEntity<?> getDoseSchedulesByItem(@PathVariable Integer itemId) {
         List<DoseSchedule> schedules = doseScheduleService.getDoseSchedulesByItem(itemId);
+        if (schedules.isEmpty()) {
+            return ResponseEntity.status(200).body(new ApiResponse("Dose schedules list is empty"));
+        }
         return ResponseEntity.status(200).body(schedules);
     }
 

@@ -4,6 +4,7 @@ import com.example.jura.Api.ApiResponse;
 import com.example.jura.Model.DrugCache;
 import com.example.jura.Service.DrugCacheService;
 import jakarta.validation.Valid;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -14,7 +15,13 @@ import org.springframework.web.bind.annotation.*;
 public class DrugCacheController {
     private final DrugCacheService drugCacheService;
     @GetMapping("/getAll")
-    public ResponseEntity<?> all() { return ResponseEntity.status(200).body(drugCacheService.getAllDrugCaches()); }
+    public ResponseEntity<?> all() {
+        List<DrugCache> drugs = drugCacheService.getAllDrugCaches();
+        if (drugs.isEmpty()) {
+            return ResponseEntity.status(200).body(new ApiResponse("Drug cache list is empty"));
+        }
+        return ResponseEntity.status(200).body(drugs);
+    }
     @GetMapping("/get-by-id/{id}")
     public ResponseEntity<?> byId(@PathVariable Integer id) {
         DrugCache drug = drugCacheService.getDrugCacheById(id);

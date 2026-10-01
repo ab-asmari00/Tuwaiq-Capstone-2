@@ -41,12 +41,18 @@ public class DoseLogController {
     @GetMapping("/get-by-schedule/{scheduleId}")
     public ResponseEntity<?> getDoseLogsBySchedule(@PathVariable Integer scheduleId) {
         List<DoseLog> logs = doseLogService.getDoseLogsBySchedule(scheduleId);
+        if (logs.isEmpty()) {
+            return ResponseEntity.status(200).body(new ApiResponse("Dose logs list is empty"));
+        }
         return ResponseEntity.status(200).body(logs);
     }
 
     @GetMapping("/get-by-item/{itemId}")
     public ResponseEntity<?> getDoseLogsByItem(@PathVariable Integer itemId) {
         List<DoseLog> logs = doseLogService.getDoseLogsByItem(itemId);
+        if (logs.isEmpty()) {
+            return ResponseEntity.status(200).body(new ApiResponse("Dose logs list is empty"));
+        }
         return ResponseEntity.status(200).body(logs);
     }
 

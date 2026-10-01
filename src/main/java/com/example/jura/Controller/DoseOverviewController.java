@@ -16,11 +16,17 @@ public class DoseOverviewController {
     @GetMapping("/today/{userId}")
     public ResponseEntity<?> today(@PathVariable Integer userId) {
         List<TodayDose> doses = overviewService.getToday(userId);
+        if (doses.isEmpty()) {
+            return ResponseEntity.status(200).body(new ApiResponse("Today's dose list is empty"));
+        }
         return ResponseEntity.status(200).body(doses);
     }
     @GetMapping("/reminders/{userId}")
     public ResponseEntity<?> reminders(@PathVariable Integer userId) {
         List<TodayDose> doses = overviewService.getReminders(userId);
+        if (doses.isEmpty()) {
+            return ResponseEntity.status(200).body(new ApiResponse("Dose reminders list is empty"));
+        }
         return ResponseEntity.status(200).body(doses);
     }
 }

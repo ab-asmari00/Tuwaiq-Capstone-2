@@ -35,7 +35,11 @@ public class InteractionController {
 
     @GetMapping("/getAll")
     public ResponseEntity<?> getAllResults() {
-        return ResponseEntity.status(200).body(interactionService.getAllResults());
+        List<AiInteractionResult> results = interactionService.getAllResults();
+        if (results.isEmpty()) {
+            return ResponseEntity.status(200).body(new ApiResponse("Interaction results list is empty"));
+        }
+        return ResponseEntity.status(200).body(results);
     }
 
     @GetMapping("/get-by-id/{id}")
@@ -48,6 +52,9 @@ public class InteractionController {
     @GetMapping("/get-by-item/{itemId}")
     public ResponseEntity<?> getResultsByItem(@PathVariable Integer itemId) {
         List<AiInteractionResult> results = interactionService.getResultsByItem(itemId);
+        if (results.isEmpty()) {
+            return ResponseEntity.status(200).body(new ApiResponse("Interaction results list is empty"));
+        }
         return ResponseEntity.status(200).body(results);
     }
 

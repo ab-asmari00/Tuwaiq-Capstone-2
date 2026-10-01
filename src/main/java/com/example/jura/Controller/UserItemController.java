@@ -35,6 +35,9 @@ public class UserItemController {
     @GetMapping("/get-active-by-user/{userId}")
     public ResponseEntity<?> getActiveUserItems(@PathVariable Integer userId) {
         List<UserItem> items = userItemService.getActiveUserItems(userId);
+        if (items.isEmpty()) {
+            return ResponseEntity.status(200).body(new ApiResponse("User items list is empty"));
+        }
         return ResponseEntity.status(200).body(items);
     }
 
