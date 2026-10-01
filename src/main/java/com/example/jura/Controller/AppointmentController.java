@@ -7,6 +7,7 @@ import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.Errors;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -19,18 +20,27 @@ public class AppointmentController {
     @GetMapping("/get-by-patient/{patientId}")
     public ResponseEntity<?> patientAppointments(@PathVariable Integer patientId) {
         List<Appointment> appointments = appointmentService.getPatientAppointments(patientId);
+        if (appointments.isEmpty()) {
+            return ResponseEntity.status(200).body(new ApiResponse("Appointments list is empty"));
+        }
         return ResponseEntity.status(200).body(appointments);
     }
 
     @GetMapping("/get-by-doctor/{doctorId}")
     public ResponseEntity<?> doctorAppointments(@PathVariable Integer doctorId) {
         List<Appointment> appointments = appointmentService.getDoctorAppointments(doctorId, false);
+        if (appointments.isEmpty()) {
+            return ResponseEntity.status(200).body(new ApiResponse("Appointments list is empty"));
+        }
         return ResponseEntity.status(200).body(appointments);
     }
 
     @GetMapping("/get-pending-by-doctor/{doctorId}")
     public ResponseEntity<?> doctorRequests(@PathVariable Integer doctorId) {
         List<Appointment> appointments = appointmentService.getDoctorAppointments(doctorId, true);
+        if (appointments.isEmpty()) {
+            return ResponseEntity.status(200).body(new ApiResponse("Appointments list is empty"));
+        }
         return ResponseEntity.status(200).body(appointments);
     }
 
@@ -56,7 +66,11 @@ public class AppointmentController {
     }
 
     @PutMapping("/update/{id}")
-    public ResponseEntity<?> updateAppointment(@PathVariable Integer id, @RequestBody Appointment appointment) {
+    public ResponseEntity<?> updateAppointment(@PathVariable Integer id, @RequestBody @Valid Appointment appointment,
+                                                Errors errors) {
+        if (errors.hasErrors()) {
+            return ResponseEntity.badRequest().body(new ApiResponse(errors.getAllErrors().get(0).getDefaultMessage()));
+        }
         appointmentService.updateAppointment(id, appointment);
         return ResponseEntity.status(200).body(new ApiResponse("Appointment updated successfully"));
     }
